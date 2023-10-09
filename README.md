@@ -5,6 +5,7 @@ This README is in the public domain (as per Esolang's requirements), while the i
 ---
 
 # Lasagna
+
 Lasagna is an esoteric programming language defined by an unsized LIFO stack (hence the name, stack) of bytes, inspired by assembly languages.
 
 ---
@@ -12,6 +13,7 @@ Lasagna is an esoteric programming language defined by an unsized LIFO stack (he
 ## Basics
 
 A program file, with extension `.bin.lsg`, is defined by a list of instructions (each being one byte), and corresponding arguments.
+
 If, at any point, the stack is popped without anything on it, the program will immediately halt with an error.
 
 --- 
@@ -24,43 +26,57 @@ A text representation of a program, with extension `.txt.lsg`, is formatted with
 
 Comments in textual form are any text surrounded by square brackets, with nesting allowed.
 
+
 `[This is a [comment]]`
 
 ### Load
 
 There is a special case for load - you can load many bytes at once, and it's compiled to separate load instructions.
+
 There are 4 different ways to format this data: raw bytes, a string, an integer, or a float.
 
 ### Bytes
 
 Raw bytes are formatted with a pound sign, arbitrarily many bytes, and another pound sign.
 
+
 `# 01 23 45 67 89 AB CD EF #`
+
 `01 23 45 67 89 AB CD EF`
 
 ### Float
 
 Floats are stored in IEEE 754 format, using 32 bytes to store the value.
+
 All floats MUST be formatted with a number before and after the decimal point, and optionally with an exponent.
+
 Hexadecimal-style floats are not supported.
 
+
 `0.0`, `-6.2e1`
+
 `00 00 00 00`, `C2 78 00 00`
 
 ### Integer
 
 Integers are stored big-endian, two's complement, with 6 distinct types, marked with a suffix.
+
 Any integers that won't fit into their type will fail to compile to a binary program.
 
+
 `0_u8`, `-1_i8`, `2_u16`, `-3_i16`, `4_u32`, `-5_i32`
+
 `00`, `FF`, `00 02`, `FF FD`, `00 00 00 04`, `FF FF FF FB`
 
 ### String
 
 Strings are stored as ASCII, backwards in the stack, with a null byte at the end.
+
 They are stored backwards for ease of printing.
 
+
 `'Hello, world!'`
+
 `00 21 64 6C 72 6F 77 20 2C 6F 6C 6C 65 48`
 
 ---
@@ -68,8 +84,11 @@ They are stored backwards for ease of printing.
 ## Instructions
 
 Any invalid instruction will make the program fail before running.
+
 Each instruction is formatted as a kind, an index, and, 3 bits of a type (if applicable, else `000`).
+
 In textual representation, the type of the operation, if applicable, is put after the instruction.
+
 
 |          Type           |  Name   | Bits  |
 |:-----------------------:|:-------:|:-----:|
@@ -81,6 +100,7 @@ In textual representation, the type of the operation, if applicable, is put afte
 |  Signed 32-bit integer  |  `i32`  | `101` |
 |          Float          | `float` | `110` |
 |         String          |  `str`  | `111` |
+
 
 | Instruction | Typed? | Textual Representation | Description                                                                                                                                                                                                                                                                                                                 |
 |:-----------:|:------:|:----------------------:|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
