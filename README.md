@@ -39,14 +39,15 @@ There are 4 different ways to format this data: raw bytes, a string, an integer,
 
 Raw bytes are formatted with a pound sign, arbitrarily many bytes, and another pound sign.
 
+These are stored backwards in the stack to allow sequential popping.
 
 `# 01 23 45 67 89 AB CD EF #`
 
-`01 23 45 67 89 AB CD EF`
+`EF CD AB 89 67 45 23 01`
 
 ### Float
 
-Floats are stored in IEEE 754 format, using 32 bytes to store the value.
+Floats are stored in IEEE 754 format, big-endian, using 32 bytes to store the value.
 
 All floats MUST be formatted with a number before and after the decimal point, and optionally with an exponent.
 
@@ -55,7 +56,7 @@ Hexadecimal-style floats are not supported.
 
 `0.0`, `-6.2e1`
 
-`00 00 00 00`, `C2 78 00 00`
+`00 00 00 00`, `00 00 78 C2`
 
 ### Integer
 
@@ -124,8 +125,8 @@ In textual representation, the type of the operation, if applicable, is put afte
 | `10` `000`  |  Yes   |         `add`          | Pops two values of the specified type from the stack, adds them, and pushes the resulting value, plus a boolean byte indicating if overflow occurred.<br/>Invalid for strings. If you need concatenation, just push both strings and remove the null terminator.                                                                        |
 | `10` `001`  |  Yes   |       `subtract`       | Subtracts two values, and pushes the resulting value, plus a boolean byte indicating if overflow occurred. Invalid for strings.                                                                                                                                                                                                         |
 | `10` `010`  |  Yes   |       `multiply`       | Multiplies two values, and pushes the resulting value, plus a boolean byte indicating if overflow occurred. Invalid for strings.                                                                                                                                                                                                        |
-| `10` `011`  |  Yes   |        `divide`        | Divides two values, and pushes the resulting value, plus a boolean byte indicating if there was a divide by zero. Invalid for strings.                                                                                                                                                                                                  |
-| `10` `100`  |  Yes   |      `remainder`       | Gets the remainder after dividing two values, and pushes the resulting value, plus a boolean byte indicating if there was a divide by zero. Invalid for strings.                                                                                                                                                                        |
+| `10` `011`  |  Yes   |        `divide`        | Divides two values, and pushes the resulting value, plus a true boolean byte, or just a false one if there was a divide by zero. Invalid for strings.                                                                                                                                                                                   |
+| `10` `100`  |  Yes   |      `remainder`       | Gets the remainder after dividing two values, and pushes the resulting value, plus a true boolean byte, or just a false one if there was a divide by zero. Invalid for strings.                                                                                                                                                         |
 | `10` `101`  |  Yes   |        `order`         | Pushes a 00 if the two given values are equal, a FF if the first is larger, a 01 if the second is larger, and a 7F if they're otherwise not equal.                                                                                                                                                                                      |
 | `10` `110`  |  Yes   |      `shiftleft`       | Bit-shifts a value leftwards by another value, and pushes the resulting value, filling empty space with zeros and discarding bits outside.<br/>Invalid for strings and floats.                                                                                                                                                          |
 | `10` `111`  |  Yes   |      `shiftright`      | Bit-shifts a value rightwards by another value, and pushes the resulting value, filling empty space with zeros and discarding bits outside.<br/>Invalid for strings and floats.                                                                                                                                                         |
