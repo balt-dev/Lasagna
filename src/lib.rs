@@ -1,16 +1,11 @@
-mod structures;
+#![no_std]
 
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+#[cfg(any(target_pointer_width = "16", target_pointer_width = "8"))]
+compile_error!("A target pointer width of at least 32 is required for this crate");
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+pub mod structures;
+pub mod constants {
+    pub const GROUP: u8 = 0b11000000;
+    pub const INDEX: u8 = 0b00111000;
+    pub const TYPE : u8 = 0b00000111;
 }

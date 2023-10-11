@@ -1,314 +1,116 @@
-use std::io::{Read, Write, Cursor, Seek};
-use std::borrow::Cow;
-use rand::{self, Rng};
-
-pub const GROUP: u8 = 0b11000000;
-pub const INDEX: u8 = 0b00111000;
-pub const TYPE : u8 = 0b00000111;
-
-pub(crate) struct Stack (Cursor<Vec<u8>>);
-
-impl Read for Stack {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        self.0.read(buf)
-    }
+use core::hint::unreachable_unchecked;
+use crate::constants;
+pub enum Type {
+    U8,
+    I8,
+    U16,
+    I16,
+    U32,
+    I32,
+    //Float,
+    String
 }
 
-impl Write for Stack {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let needed_size = (self.0.position() as usize) + buf.len();
-        let inner = self.0.get_mut();
-        // Noop if already big enough
-        if inner.len() < needed_size {
-            inner.resize(needed_size, 0);
+pub enum Instruction {
+    Noop,
+    Load(Type),
+    Take(Type),
+    Put(Type),
+    Discard(Type),
+    Copy(Type),
+    Random(Type),
+    Swap(Type),
+    Jump(u32),
+    JumpZero(u32),
+    Index,
+    Return,
+    Left(Type),
+    Right(Type),
+    Start,
+    End,
+    Add(Type),
+    Subtract(Type),
+    Multiply(Type),
+    Divide(Type),
+    Remainder(Type),
+    Order(Type),
+    ShiftLeft(Type),
+    ShiftRight(Type),
+    Cast(Type, Type)
+}
+
+impl Instruction {
+    /// Parse an instruction from a byte slice. Returns None if there's not enough bytes in the slice.
+    fn parse(slice: &[u8], index: usize) -> Option<Self> {
+        use Instruction::*;
+
+        if slice.len() < index {
+            return None;
         }
-        let old_pos = self.0.position();
-        let amt = self.0.write(buf)?;
-        self.0.set_position(old_pos);
-        Ok(amt)
-    }
 
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.0.flush()
-    }
-}
-
-pub struct State<'a, R: Read, W: Write> {
-    pub(crate) program: Cursor<&'a [u8]>,
-    pub(crate) stack: Stack,
-    pub(crate) jump_stack: Vec<u64>,
-    input: R,
-    output: W
-}
-
-macro_rules! operator {
-    ($self: ident, $ty: ty, $operator: ident) => {
-        let a = $ty::from_be_bytes(a.as_slice().into());
-        let b = $ty::from_be_bytes(b.as_slice().into());
-        let res = a.$operator(b);
-        $self.stack.write_all(&res.0.to_be_bytes())?;
-        $self.stack.write_all(&[res.1 as u8])?;
-    };
-}
-
-macro_rules! order {
-    ($self: ident, $ty: ty, $_operator: ident) => {
-        use std::cmp::Ordering::*;
-        let a = $ty::from_be_bytes(a.as_slice().into());
-        let b = $ty::from_be_bytes(b.as_slice().into());
-        let order = a.partial_cmp(b);
-        let res = match order {
-            Some(Equal)   => 0x00,
-            Some(Greater) => 0xFF,
-            Some(Less)    => 0x01,
-            None          => 0x7F
+        let instr_type = match slice[index] & constants::TYPE {
+            0b000 => Type::U8,
+            0b001 => Type::I8,
+            0b010 => Type::U16,
+            0b011 => Type::I16,
+            0b100 => Type::U32,
+            0b101 => Type::I32,
+            0b110 => Type::Float,
+            0b111 => Type::String,
+            // Due to the mask on TYPE, this cannot be reached.
+            _ => unsafe {unreachable_unchecked()}
         };
-        $self.stack.write_all(&[res as u8])?;
-    };
-}
 
-macro_rules! checked {
-    ($self: ident, $ty: ty, $operator: ident) => {
-        let a = $ty::from_be_bytes(a.as_slice().into());
-        let b = $ty::from_be_bytes(b.as_slice().into());
-        let res = a.$operator(b);
-        if let Some(res) = res {
-            $self.stack.write_all(&res.to_be_bytes())?;
-        }
-        $self.stack.write_all(&[res.is_some() as u8])?;
-    };
-}
-
-
-macro_rules! numeric {
-    ($self: ident $raw_instr: ident $operator: ident $inner: ident) => {
-        match $raw_instr | TYPE {
-            0b000 => $inner!($self,  u8, $operator),
-            0b001 => $inner!($self,  i8, $operator),
-            0b010 => $inner!($self, u16, $operator),
-            0b011 => $inner!($self, i16, $operator),
-            0b100 => $inner!($self, u32, $operator),
-            0b101 => $inner!($self, i32, $operator),
-            0b110 => $inner!($self, f32, $operator),
-            _ => return Err(()) // Invalid instruction
-        }
-        Ok(())
-    }
-}
-
-// There's probably a better solution to this but :P
-macro_rules! integral {
-    ($self: ident $raw_instr: ident $operator: ident $inner: ident) => {
-        match $raw_instr | TYPE {
-            0b000 => $inner!($self,  u8, $operator),
-            0b001 => $inner!($self,  i8, $operator),
-            0b010 => $inner!($self, u16, $operator),
-            0b011 => $inner!($self, i16, $operator),
-            0b100 => $inner!($self, u32, $operator),
-            0b101 => $inner!($self, i32, $operator),
-            _ => return Err(()) // Invalid instruction
-        }
-        Ok(())
-    }
-}
-
-impl<'a, R: Read, W: Write> State<'a, R, W> {
-    pub fn new(program: Cursor<&'a [u8]>, reader: R, writer: W) -> Self {
-        let stack = Vec::new();
-        Self {
-            program,
-            stack: Stack(Cursor::new(stack)),
-            jump_stack: Vec::new(),
-            input: reader,
-            output: writer
-        }
-    }
-
-    fn jump_prog(&mut self) -> Result<(), ()> {
-        let mut buf = [0; 4];
-        self.program.read_exact(&mut buf)
-            .map_err(|_| ())?;
-        let index = u32::from_be_bytes(
-            buf
-        ) as usize;
-        self.jump_stack.push(self.program.position());
-        self.program.set_position(index as u64);
-        Ok(())
-    }
-
-    /// Read a value
-    pub(crate) fn read_value(stream: &mut dyn Read, instr: u8) -> std::io::Result<Vec<u8>> {
-        Ok(match instr & TYPE {
-            0b000 | 0b001 => {
-                let mut buf = [0];
-                stream.read_exact(&mut buf)?;
-                buf.to_vec()
+        Some ( match (slice[index] & (!constants::TYPE)) >> 3 {
+            0b00_000 => Noop,
+            0b00_001 => Load(instr_type),
+            0b00_010 => Take(instr_type),
+            0b00_011 => Put(instr_type),
+            0b00_100 => Discard(instr_type),
+            0b00_101 => Copy(instr_type),
+            0b00_110 => Random(instr_type),
+            0b00_111 => Swap(instr_type),
+            0b01_000 => {
+                // Check for both overflow and
+                if (index > usize::MAX - 4) || (slice.len() < (index + 4)) { return None; }
+                let jump = u32::from_be_bytes(
+                    // Use an inclusive slice to prevent potential overflow
+                    unsafe {slice[index + 1 ..= index + 4].try_into().unwrap_unchecked()}
+                );
+                Jump(jump)
             },
-            0b010 | 0b011 => {
-                let mut buf = [0; 2];
-                stream.read_exact(&mut buf)?;
-                buf.to_vec()
+            0b01_001 => {
+                // Code duplication? I think you mean less overhead!
+                if (index > usize::MAX - 4) || (slice.len() < (index + 4)) { return None; }
+                let jump = u32::from_be_bytes(
+                    unsafe {slice[index + 1 ..= index + 4].try_into().unwrap_unchecked()}
+                );
+                JumpZero(jump)
             },
-            0b100 | 0b101 | 0b110 => {
-                let mut buf = [0; 4];
-                stream.read_exact(&mut buf)?;
-                buf.to_vec()
-            }
-            0b111 => {
-                let mut buf = Vec::new();
-                loop {
-                    buf.push(0);
-                    let end = buf.len() - 1;
-                    stream.read_exact(
-                        &mut buf[end..end]
-                    )?;
-                    if *buf.last().unwrap() == 0 {
-                        break;
-                    }
-                }
-                buf
-            },
-            _ => unreachable!()
+            0b01_010 => Index,
+            0b01_011 => Return,
+            0b01_100 => Left(instr_type),
+            0b01_101 => Right(instr_type),
+            0b01_110 => Start,
+            0b01_111 => End,
+            0b10_000 => Add(instr_type),
+            0b10_001 => Subtract(instr_type),
+            0b10_010 => Multiply(instr_type),
+            0b10_011 => Divide(instr_type),
+            0b10_100 => Remainder(instr_type),
+            0b10_101 => Order(instr_type),
+            0b10_110 => ShiftLeft(instr_type),
+            0b10_111 => ShiftRight(instr_type),
+            0b11_000 => Cast(instr_type, Type::U8),
+            0b11_001 => Cast(instr_type, Type::I8),
+            0b11_010 => Cast(instr_type, Type::U16),
+            0b11_011 => Cast(instr_type, Type::I16),
+            0b11_100 => Cast(instr_type, Type::U32),
+            0b11_101 => Cast(instr_type, Type::I32),
+            0b11_110 => Cast(instr_type, Type::Float),
+            0b11_111 => Cast(instr_type, Type::String),
+            // We matched all 32 possibilities above.
+            _ => unsafe {unreachable_unchecked()}
         })
-    }
-    /// Steps the state by one cycle, and returns a boolean of whether or not to halt, or if the stack is overdrawn, an empty Err.
-    pub fn step(&mut self) -> Result<bool, ()> {
-        let mut instr_buf = [0];
-        // Ignore I/O errors, as in the spec
-        if let Ok(read_bytes) = self.program.read(&mut instr_buf) {
-            if read_bytes == 0 {return Ok(true);}
-        }
-        let raw_instr = instr_buf[0];
-        match (raw_instr & (GROUP | INDEX)) >> 3 {
-            0b00000 => {},
-            0b00001 => {
-                let value = Self::read_value(&mut self.program, raw_instr)
-                    .map_err(|_| ())?;
-                self.stack.write_all(value.as_slice())
-                    .unwrap();
-            },
-            0b00010 => {
-                let value = Self::read_value(&mut self.input, raw_instr);
-                if let Ok(v) = &value {
-                    self.stack.write_all(v.as_slice())
-                        .unwrap();
-                };
-                self.stack.write_all(&[
-                    value.is_ok() as u8
-                ]).unwrap();
-            },
-            0b00011 => {
-                let value =
-                    Self::read_value(&mut self.stack, raw_instr)
-                        .map_err(|_| ())?;
-                if let Err(_) = self.output.write_all(value.as_slice()) {
-                    // Ignore
-                };
-            },
-            0b00100 => {
-                Self::read_value(&mut self.stack, raw_instr)
-                    .map_err(|_| ())?;
-            },
-            0b00101 => {
-                let value = Self::read_value(&mut self.stack, raw_instr)
-                    .map_err(|_| ())?;
-                self.stack.write_all(value.as_slice()).unwrap();
-                self.stack.write_all(value.as_slice()).unwrap();
-            },
-            0b00110 => {
-                if raw_instr & TYPE == 0b110 {
-                    let bytes = rand::random::<f32>().to_be_bytes();
-                    self.stack.write_all(&bytes).unwrap();
-                } else {
-                    let size = match raw_instr & TYPE {
-                        0b000 | 0b001 => 1,
-                        0b010 | 0b011 => 2,
-                        0b100 | 0b101 => 4,
-                        0b111 => return Err(()),
-                        _ => unreachable!()
-                    };
-                    let mut buf = vec![0; size];
-                    rand::thread_rng().fill(buf.as_mut_slice());
-                    self.stack.write_all(&buf).unwrap();
-                }
-            }
-            0b00111 => {
-                let a = Self::read_value(&mut self.stack, raw_instr)
-                    .map_err(|_| ())?;
-                let b = Self::read_value(&mut self.stack, raw_instr)
-                    .map_err(|_| ())?;
-                self.stack.write_all(a.as_slice()).unwrap();
-                self.stack.write_all(b.as_slice()).unwrap();
-            },
-            0b01000 => {
-                self.stack.0.set_position(0);
-            },
-            0b01001 => {
-                self.jump_prog()?;
-            },
-            0b01010 => {
-                let mut byte = [0];
-                self.stack.read_exact(&mut byte)
-                    .map_err(|_| ())?;
-                let byte = byte[0];
-                if byte == 0 {
-                    self.jump_prog()?;
-                }
-            },
-            0b01011 => {
-                if let Some(idx) = self.jump_stack.pop() {
-                    self.program.set_position(idx);
-                } else {
-                    return Ok(true);
-                }
-            },
-            0b01100 => {
-                self.stack.0.set_position(
-                    if self.stack.0.position() == 0 {
-                        self.stack.0.get_ref().len() as u64
-                    } else {
-                        self.stack.0.position() - 1
-                    }
-                );
-            },
-            0b01101 => {
-                self.stack.0.set_position(
-                    if self.stack.0.position() ==
-                        (self.stack.0.get_ref().len().saturating_sub(1) as u64) {
-                        0
-                    } else {
-                        self.stack.0.position() + 1
-                    }
-                );
-            },
-            0b01110 => {
-                let idx = self.stack.0.position() as u32;
-                let bytes = idx.to_be_bytes();
-                self.stack.write_all(&bytes).unwrap();
-            },
-            0b01111 => {
-                self.stack.0.set_position(
-                    self.stack.0.get_ref().len().saturating_sub(1) as u64
-                );
-            },
-            0b10000 => numeric!(self raw_instr overflowing_add operator),
-            0b10001 => numeric!{self raw_instr overflowing_sub operator},
-            0b10010 => numeric!{self raw_instr overflowing_mul operator},
-            0b10011 => numeric!{self raw_instr checked_div checked},
-            0b10100 => numeric!{self raw_instr checked_rem checked},
-            0b10101 => numeric!(self raw_instr partial_cmp order),
-            0b10110 => {
-
-            },
-            0b10111 => {
-
-            },
-            _ => {
-                // Casting types
-                let from = (raw_instr & INDEX) >> 3;
-                let to = raw_instr & TYPE;
-            }
-        }
-        Ok(false)
     }
 }
