@@ -6,48 +6,79 @@ This README is in the public domain (as per Esolang's requirements), while the i
 
 # Lasagna
 
-Lasagna is an esoteric programming language defined by an unsized LIFO stack (hence the name, stack) of bytes, inspired by assembly languages.
+Lasagna is an esoteric 32-bit assembly instruction set.
+
+There are three 4-byte registers, being `VAL1`, `VAL2`, and `PTR`.
+
+`VAL1` and `VAL2` hold 4-byte values, `PTR` holds a pointer to a place in memory.
+
+Memory indexes `FF000000` - `FFFFFFFF` are reserved for the subroutine stack, but writing or reading these values is allowed (if you're brave).
+
+The first 2 bytes of the subroutine stack are null, and the next 6 are the current stack length as a `u24`.
 
 ---
 
-## Basics
+## Instructions
 
-A program file, with extension `.bin.lsg`, is defined by a list of instructions (each being one byte), and corresponding arguments.
+An executable is defined by a list of instructions (each being one byte), and corresponding arguments.
 
-If, at any point, the stack is popped without anything on it, the program will immediately halt with an error.
+Each instruction is formatted as a kind, an index, and, 3 bits of a type (if applicable, else it can be anything).
 
---- 
+|          Type           |  Name   | Bits  | Size |
+|:-----------------------:|:-------:|:-----:|:----:|
+| Unsigned 8-bit integer  |  `u8`   | `000` |  1   |
+|  Signed 8-bit integer   |  `i8`   | `001` |  1   |
+| Unsigned 16-bit integer |  `u16`  | `010` |  2   |
+|  Signed 16-bit integer  |  `i16`  | `011` |  2   |
+| Unsigned 32-bit integer |  `u32`  | `100` |  4   |
+|  Signed 32-bit integer  |  `i32`  | `101` |  4   |
+|          Float          | `float` | `110` |  4   |
+|         Boolean         | `bool`  | `111` |  1   |
 
-## Text
+In the following table, N represents the size of the specified type.
 
-A text representation of a program, with extension `.txt.lsg`, is formatted with one instruction per line.
+|   Instruction    | Textual Representation | Description                                                                                                                                                                                                                                                                                                                                                                                                                           |
+|:----------------:|:----------------------:|:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `00` `000` `ANY` |         `noop`         | Does nothing.                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `00` `001` `TYP` |     `load [type]`      | Loads the next N bytes of the assembly into `VAL1`. In text, the type is deduced from the following value.                                                                                                                                                                                                                                                                                                                            |
+| `00` `010` `ARG` |     `system [0-7]`     | Executes a system call with the ID of the u16 in `VAL1`, and the number of arguments being the type of the instruction interpreted as a 3-bit unsigned integer.<br/>The arguments of the system call are stored sequentially in memory at `PTR`.                                                                                                                                                                                      |
+| `00` `011` `ANY` |      `interrupt`       | Raises a system interrupt with the exit code stored in `VAL1` as an i32.                                                                                                                                                                                                                                                                                                                                                              |
+| `00` `100` `ANY` |         `copy`         | Copies the contents of `VAL1` into `VAL2`.                                                                                                                                                                                                                                                                                                                                                                                            |
+| `00` `101` `ANY` |         `swap`         | Swaps the contents of `VAL1` and `VAL2`.                                                                                                                                                                                                                                                                                                                                                                                              |
+| `00` `110` `TYP` |     `read [type]`      | Writes N bytes of memory at `PTR` to `VAL1`.                                                                                                                                                                                                                                                                                                                                                                                          |
+| `00` `111` `TYP` |     `write [type]`     | Writes N bytes of `VAL1` into memory at `PTR`.                                                                                                                                                                                                                                                                                                                                                                                        |
+|       N/A        |      `label [ID]`      | Not represented in the file. Marks a cursor index to jump to.                                                                                                                                                                                                                                                                                                                                                                         |
+| `01` `000` `ANY` |      `jump [ID]`       | Jumps to the specified cursor index.                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `01` `001` `ANY` |     `branch [ID]`      | Jumps if the value in `VAL1` is `00000000`.                                                                                                                                                                                                                                                                                                                                                                                           |
+| `01` `010` `ANY` |      `call [ID]`       | Jumps to the specified cursor index, and pushes the current cursor index to the subroutine stack.                                                                                                                                                                                                                                                                                                                                     |
+| `01` `011` `ANY` |        `return`        | Pops a cursor index from the return stack and goes to that cursor index. Execution halts if the stack is empty.                                                                                                                                                                                                                                                                                                                       |
+| `01` `100` `TYP` |     `left [type]`      | Decreases `PTR` by N.                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `01` `101` `TYP` |     `right [type]`     | Increases `PTR` by N.                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `01` `110` `ANY` |         `move`         | Copies the contents of `VAL1` into `PTR`.                                                                                                                                                                                                                                                                                                                                                                                             |
+| `01` `111` `ANY` |       `pointer`        | Copies `PTR` into the contents of `VAL1`.                                                                                                                                                                                                                                                                                                                                                                                             |
+| `10` `000` `TYP` |      `add [type]`      | Adds `VAL1` and `VAL2`, and puts the result in `VAL1`, and any overflow in `VAL2`.                                                                                                                                                                                                                                                                                                                                                    |
+| `10` `001` `TYP` |   `subtract [type]`    | Subtracts `VAL1` from `VAL2`, and puts the result in `VAL1`, and any underflow in `VAL2`.                                                                                                                                                                                                                                                                                                                                             |
+| `10` `010` `TYP` |   `multiply [type]`    | Multiplies `VAL1` by `VAL2`, and puts the result in `VAL1`, and any overflow in `VAL2`.                                                                                                                                                                                                                                                                                                                                               |
+| `10` `011` `TYP` |    `divide [type]`     | Divides `VAL1` by `VAL2`, and puts the quotient in `VAL1`, and the remainder in `VAL2`. Execution halts if `VAL2` is zero.                                                                                                                                                                                                                                                                                                            |
+| `10` `100` `TYP` |    `compare [type]`    | Compares `VAL1` with `VAL2`. In `VAL1`, puts, if they're equal, `00`, if `VAL1` is greater, `01`, if `VAL2` is greater, `FF`, and if they're otherwise unequal (e.g. NaN), `7F`.                                                                                                                                                                                                                                                      |
+| `10` `101` `TYP` |      `and [type]`      | Performs the bitwise AND of N bytes of `VAL1` and `VAL2`, and puts the result in `VAL1`.                                                                                                                                                                                                                                                                                                                                              |
+| `10` `110` `TYP` |      `or [type]`       | Performs the bitwise OR of N bytes of `VAL1` and `VAL2`, and puts the result in `VAL1`.                                                                                                                                                                                                                                                                                                                                               |
+| `10` `111` `TYP` |      `not [type]`      | Performs the bitwise NOT of N bytes of `VAL1`, and puts the result in `VAL1`.                                                                                                                                                                                                                                                                                                                                                         |
+| `11` `TYP` `TYP` |  `cast [type] [type]`  | Casts the value in `VAL1` from one type to another.<br/>Booleans cast to 0 if false, 1 if true.<br/>Floats cast to 0 for NaN, the minimum value of the type for -Inf, and the maximum value of the type for Inf.</br>Casting a signed number to a boolean tells you if it is smaller than 0, and casting an unsigned number tells you if it is larger than 0.<br/>Integers casting to floats cast to the nearest representable value. |
+
+---
+
+## Textual Representation of Types
 
 ### Comments
 
-Comments in textual form are any text surrounded by square brackets, with nesting allowed.
-
+Comments are noted as text surrounded by square brackets, with nesting allowed.
 
 `[This is a [comment]]`
 
-### Load
-
-There is a special case for load - you can load many bytes at once, and it's compiled to separate load instructions.
-
-There are 4 different ways to format this data: raw bytes, a string, an integer, or a float.
-
-### Bytes
-
-Raw bytes are formatted with a pound sign, arbitrarily many bytes, and another pound sign.
-
-These are stored backwards in the stack to allow sequential popping.
-
-`# 01 23 45 67 89 AB CD EF #`
-
-`EF CD AB 89 67 45 23 01`
-
 ### Float
 
-Floats are stored in IEEE 754 format, big-endian, using 32 bytes to store the value.
+Floats are stored in IEEE 754 format, using 32 bytes to store the value.
 
 All floats MUST be formatted with a number before and after the decimal point, and optionally with an exponent.
 
@@ -56,11 +87,11 @@ Hexadecimal-style floats are not supported.
 
 `0.0`, `-6.2e1`
 
-`00 00 00 00`, `00 00 78 C2`
+`00 00 00 00`, `C2 78 00 00`
 
-### Integer
+### Integers
 
-Integers are stored big-endian, two's complement, with 6 distinct types, marked with a suffix.
+Integers are stored big-endian, two's complement, marked with a suffix.
 
 Any integers that won't fit into their type will fail to compile to a binary program.
 
@@ -73,63 +104,14 @@ Any integers that won't fit into their type will fail to compile to a binary pro
 
 Strings are stored as ASCII, backwards in the stack, with a null byte at the end.
 
-They are stored backwards for ease of printing.
+They are stored backwards for ease of use.
 
+Newlines can be represented with `\n`. A character can be escaped with `\`.
 
 `'Hello, world!'`
 
 `00 21 64 6C 72 6F 77 20 2C 6F 6C 6C 65 48`
 
----
+### Boolean
 
-## Instructions
-
-Any invalid instruction will make the program fail. This may fail at runtime, but it's best for this to fail at compile time, if compiling.
-
-Each instruction is formatted as a kind, an index, and, 3 bits of a type (if applicable, else `000`).
-
-In textual representation, the type of the operation, if applicable, is put after the instruction.
-
-
-|          Type           |  Name   | Bits  |
-|:-----------------------:|:-------:|:-----:|
-| Unsigned 8-bit integer  |  `u8`   | `000` |
-|  Signed 8-bit integer   |  `i8`   | `001` |
-| Unsigned 16-bit integer |  `u16`  | `010` |
-|  Signed 16-bit integer  |  `i16`  | `011` |
-| Unsigned 32-bit integer |  `u32`  | `100` |
-|  Signed 32-bit integer  |  `i32`  | `101` |
-|          Float          | `float` | `110` |
-|         String          |  `str`  | `111` |
-
-
-| Instruction | Typed? | Textual Representation | Description                                                                                                                                                                                                                                                                                                                            |
-|:-----------:|:------:|:----------------------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `00` `000`  |   No   |         `noop`         | Does nothing.                                                                                                                                                                                                                                                                                                                          |
-| `00` `001`  |  Yes   |         `load`         | Load the next value in the file to the stack.                                                                                                                                                                                                                                                                                          |
-| `00` `010`  |  Yes   |         `take`         | Take a value from stdin and put it on the stack plus a true boolean byte, or if reading fails, just puts a false boolean byte.                                                                                                                                                                                                         |
-| `00` `011`  |  Yes   |         `put`          | Pop a value from the stack, and write to stdout. Failing to write still pops from the stack.                                                                                                                                                                                                                                           |
-| `00` `100`  |  Yes   |       `discard`        | Pop a value from the stack and discard it.                                                                                                                                                                                                                                                                                             |
-| `00` `101`  |  Yes   |         `copy`         | Push the value on the stack to the stack again, copying it.                                                                                                                                                                                                                                                                            |
-| `00` `110`  |  Yes   |        `random`        | Push one random value to the stack. Invalid for strings. Anything on the range [0, 1) for floats.                                                                                                                                                                                                                                      |
-| `00` `111`  |  Yes   |         `swap`         | Swap the last two values on the stack.                                                                                                                                                                                                                                                                                                 |
-|     N/A     |   No   |        `label`         | Defines a label that can be jumped to later. Not represented in the file.<br/>In textual representation, this is an arbitrarily long string, and each string is assigned a pointer index at compile time.                                                                                                                              |
-| `01` `000`  |   No   |         `jump`         | Unconditionally jumps to the instruction index in the next four bytes in the file.<br/>Like before, this is compiled from a string from textual representation, and it fails to compile if the label doesn't exist.<br/>This pushes to a special jump stack.                                                                           |
-| `01` `001`  |   No   |       `jumpzero`       | Pops a byte from the stack, and if it is zero, jumps to the instruction in the next four bytes in the file.<br/>This pushes to a special jump stack.                                                                                                                                                                                   |
-| `01` `010`  |   No   |        `index`         | Pushes the current popping index of the stack as a u32 to the stack.                                                                                                                                                                                                                                                                   |
-| `01` `011`  |   No   |        `return`        | Pops a from the jump stack (mentioned above), and jumps one past that jump instruction.<br/>If there is nothing left on the jump stack, then this immediately ends the program without error.                                                                                                                                          |
-| `01` `100`  |  Yes   |         `left`         | Moves the index at where values are popped from the stack to the left by the specified type's size, or 1 for strings.<br/>Any pushing to the stack will overwrite previous values if the pointer is not at the end.<br/>Wraps at the borders.                                                                                          |
-| `01` `101`  |  Yes   |        `right`         | Moves the index at where values are popped from the stack to the right by the specified type's size, or 1 for strings.<br/>Any pushing to the stack will overwrite previous values if the pointer is not at the end.<br/>Wraps at the borders.                                                                                         |
-| `01` `110`  |   No   |        `start`         | Move the pop index to the beginning of the stack.                                                                                                                                                                                                                                                                                      |
-| `01` `111`  |   No   |         `end`          | Moves the pop index to the end of the stack.                                                                                                                                                                                                                                                                                           |
-| `10` `000`  |  Yes   |         `add`          | Pops two values of the specified type from the stack, adds them, and pushes the resulting value, plus a boolean byte indicating if overflow occurred.<br/>Invalid for strings. If you need concatenation, just push both strings and remove the null terminator.                                                                       |
-| `10` `001`  |  Yes   |       `subtract`       | Subtracts two values, and pushes the resulting value, plus a boolean byte indicating if overflow occurred. Invalid for strings.                                                                                                                                                                                                        |
-| `10` `010`  |  Yes   |       `multiply`       | Multiplies two values, and pushes the resulting value, plus a boolean byte indicating if overflow occurred. Invalid for strings.                                                                                                                                                                                                       |
-| `10` `011`  |  Yes   |        `divide`        | Divides two values, and pushes the resulting value, plus a true boolean byte, or just a false one if there was a divide by zero. Invalid for strings.                                                                                                                                                                                  |
-| `10` `100`  |  Yes   |      `remainder`       | Gets the remainder after dividing two values, and pushes the resulting value, plus a true boolean byte, or just a false one if there was a divide by zero. Invalid for strings.                                                                                                                                                        |
-| `10` `101`  |  Yes   |        `order`         | Pushes a 00 if the two given values are equal, a FF if the first is larger, a 01 if the second is larger, and a 7F if they're otherwise not equal.<br/>Strings are compared per-byte.                                                                                                                                                  |
-| `10` `110`  |  Yes   |      `shiftleft`       | Bit-shifts a value leftwards by another value, and pushes the resulting value, filling empty space with zeros and discarding bits outside.<br/>Invalid for strings and floats.                                                                                                                                                         |
-| `10` `111`  |  Yes   |      `shiftright`      | Bit-shifts a value rightwards by another value, and pushes the resulting value, filling empty space with zeros and discarding bits outside.<br/>Invalid for strings and floats.                                                                                                                                                        |
-|    `11`     | Yes x2 |         `cast`         | Casts a value to another type, and if successful, pushes the result, then 01, to the stack.<br/> If the cast is invalid, pushes 00 to the stack.                                                                                                                                                                                       |
-
-Care must be taken to not confuse types of stack values.
+Booleans are either `true` for `01`, or `false` for `00`.
