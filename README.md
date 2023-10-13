@@ -14,6 +14,8 @@ There are five 4-byte registers, being `VAL1`, `VAL2`, `CUR`, `PTR`, and `STAT`.
 `CUR` holds a pointer to the next instruction in memory,
 and `STAT` holds an interrupt code, raising an interrupt when written to.
 
+`VAL1` and `VAL2` start out with indeterminate values, `PTR` starts at `00000000`, `CUR` starts at `00020000`, and `STAT` starts as `00000000`.
+
 Memory indexes `00010000` - `0001FFFF` are reserved for the subroutine stack.
 Writing to these values may or may not be allowed depending on the implementation, don't depend on it.
 

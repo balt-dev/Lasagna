@@ -294,13 +294,13 @@ mod structures {
 
     /// Parse a program from a string. Returns None if failed to parse.
     pub fn parse(program: String) -> Option<Vec<Instruction>> {
-        let mut split = program.trim().chars();
+        let split = program.trim().chars();
 
         // Remove comments
         let mut comment_depth: usize = 0;
         let mut no_comments = String::new();
 
-        while let Some(char) = split.next() {
+        for char in split {
             if char == '[' {
                 comment_depth += 1;
                 continue;
@@ -323,7 +323,7 @@ mod structures {
 
         for line in no_comments.lines() {
             let line = line.trim();
-            if line.len() == 0 {continue;}
+            if line.is_empty() {continue;}
 
             let mut split = line.chars();
 
