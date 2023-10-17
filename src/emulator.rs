@@ -504,7 +504,9 @@ mod structures {
                         // The rest
                         (Value::Bool(_), 0b000 | 0b001) => {},
                         (Value::Bool(n), 0b010 | 0b011) => {self.val1[0] = 0; self.val1[1] = n},
-                        (Value::Bool(n) =>)
+                        (Value::Bool(n), 0b100 | 0b101) => {self.val1 = [0; 4]; self.val1[3] = n},
+                        (Value::Bool(n), 0b110) => {self.val1 = if n != 0 {FLOAT_ONE} else {[0; 4]}},
+
                     }
                 }
             }
