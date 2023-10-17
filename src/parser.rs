@@ -1,13 +1,11 @@
 pub use structures::{Type, Instruction, parse};
 
 mod structures {
-    use alloc::collections::BTreeMap;
-    use alloc::vec::Vec;
-    use alloc::string::String;
-    use core::fmt::{Display, Debug, Formatter};
-    use core::str::Chars;
+    use std::collections::BTreeMap;
+    use std::fmt::{Display, Debug, Formatter};
+    use std::str::Chars;
     use crate::constants;
-    
+
     #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
     #[repr(u8)]
     pub enum Type {
@@ -20,7 +18,7 @@ mod structures {
         Float = 0b110,
         Boolean = 0b111
     }
-    
+
     impl Display for Type {
         fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
             write!(f, "{}", match self {
@@ -35,10 +33,10 @@ mod structures {
             })
         }
     }
-    
+
     impl TryFrom<String> for Type {
         type Error = ();
-    
+
         fn try_from(value: String) -> Result<Self, ()> {
             Ok( match value.as_str() {
                 "u8" => Type::U8,
@@ -53,7 +51,7 @@ mod structures {
             } )
         }
     }
-    
+
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub enum Instruction {
         Noop,
@@ -88,7 +86,7 @@ mod structures {
         Xor(Type),
         Break
     }
-    
+
     impl Display for Instruction {
         fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
             use Instruction::*;
@@ -166,7 +164,7 @@ mod structures {
             }
         }
     }
-    
+
     #[inline]
     fn get_id(index: usize, slice: &[u8]) -> Option<u32> {
         if (index > usize::MAX - 4) || (slice.len() < (index + 4)) { return None; }
@@ -174,7 +172,7 @@ mod structures {
             slice[index + 1 ..= index + 4].try_into().unwrap()
         ) )
     }
-    
+
     #[derive(Debug)]
     enum ParseInstr {
         Instr(Instruction),
@@ -182,17 +180,17 @@ mod structures {
         Branch(Type, String),
         Call(String)
     }
-    
+
     impl Instruction {
         /// Parse an instruction from a program, given its index. Returns None if there's not enough bytes in the slice.
         //noinspection RsNonExhaustiveMatch
         pub fn get(slice: &[u8], index: usize) -> Option<Self> {
             use Instruction::*;
-    
+
             if slice.len() < index {
                 return None;
             }
-    
+
             let (instr_type, instr_size) = match slice[index] & constants::TYPE {
                 0b000 => (Type::U8, 1),
                 0b001 => (Type::I8, 1),
@@ -205,9 +203,9 @@ mod structures {
                 // Due to the mask on TYPE, this cannot be reached.
                 0b1000..=0b11111111 => unreachable!()
             };
-    
+
             let part = (slice[index] & (!constants::TYPE)) >> 3;
-            
+
             Some ( match part {
                 0b00_000 => Noop,
                 0b00_001 => {

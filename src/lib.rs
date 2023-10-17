@@ -1,7 +1,5 @@
-#![no_std]
 #![forbid(unsafe_code)]
 
-extern crate alloc;
 #[cfg(any(target_pointer_width = "16", target_pointer_width = "8"))]
 compile_error!("A target pointer width of at least 32 is required for this crate");
 
