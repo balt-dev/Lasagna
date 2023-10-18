@@ -26,6 +26,21 @@ mod structures {
         };
     }
 
+    macro_rules! as_convert {
+        ($n: ident, $self: ident; f32 = $size: literal) => {
+            let value = ($n as f32).to_le_bytes();
+            for i in 0..$size {
+                $self.val1[i] = value[i];
+            }
+        };
+        ($n: ident, $self: ident; $to: ty = $size: literal) => {
+            let value = ($n as $to).to_be_bytes();
+            for i in 0..$size {
+                $self.val1[i] = value[i];
+            }
+        }
+    }
+
     #[derive(Copy, Clone, PartialOrd, PartialEq)]
     enum Value {
         U8(u8),
@@ -85,25 +100,24 @@ mod structures {
         }
     }
 
-    /** An instance of an emulator. You should probably store this on the heap.
-
-       The emulator can be iterated over to get individual step results.
-       ```rust
-       # extern crate alloc;
-       # use alloc::boxed::Box;
-       # use lasagna::emulator::Emulator;
-       let emulator = Box::new(
-           Emulator::<0x100000>::default()
-       );
-
-       for result in emulator {
-           if let Some(interrupt) = result {
-               eprintln!("interrupted with code {}", interrupt);
-               break;
-           }
-       }
-       ```
-     */
+    /// An instance of an emulator. You should probably store this on the heap.
+    /// The emulator can be iterated over to get individual step results.
+    ///
+    /// ```rust
+    /// # extern crate alloc;
+    /// # use alloc::boxed::Box;
+    /// # use lasagna::emulator::Emulator;
+    /// let emulator = Box::new(
+    ///     Emulator::<0x100000>::default()
+    /// );
+    ///
+    /// for result in emulator {
+    ///     if let Some(interrupt) = result {
+    ///         eprintln!("interrupted with code {}", interrupt);
+    ///         break;
+    ///     }
+    /// }
+    /// ```
     #[derive(Clone)]
     pub struct Emulator<const SIZE: usize> {
         pub val1:   [u8; 4],
@@ -112,7 +126,8 @@ mod structures {
         pub cur:    u32,
         pub stat:   u32,
         pub memory: [u8; SIZE],
-        pub debugger: Option<fn(&mut Self) -> ()>
+        pub debugger: Option<fn(&mut Self) -> Option<u32>>,
+        pub callback: Option<fn(&mut [u8], u32, &[u8]) -> Option<u32>>
     }
 
     impl<const SIZE: usize> Default for Emulator<SIZE> {
@@ -148,25 +163,53 @@ mod structures {
                 cur,
                 stat,
                 memory: [0; SIZE],
-                debugger: None
+                debugger: None,
+                callback: None
             }
         }
 
         /// Attach a debugging function to this emulator.
+        /// Returns a potential interrupt code.
         ///
         /// # Examples
         /// ```rust
         /// # use lasagna::emulator::Emulator;
-        /// fn debugger<const SIZE: usize>(emulator: &mut Emulator<SIZE>) {
+        /// fn debugger<const SIZE: usize>(emulator: &mut Emulator<SIZE>) -> Option<u32> {
         ///     println!("VAL1: {:02X?}", emulator.val1);
+        ///     None
         /// }
         ///
         /// let mut emu = Emulator::<0x100000>::default()
         ///     .with_debugger(debugger);
         ///
         /// ```
-        pub fn with_debugger(mut self, function: fn(&mut Self) -> ()) -> Self {
+        pub fn with_debugger(mut self, function: fn(&mut Self) -> Option<u32>) -> Self {
             self.debugger = Some(function);
+            self
+        }
+
+        /// Attach a memory write callback to this emulator.
+        /// This is useful for simulating memory-mapped IO.
+        ///
+        /// Note that if a callback is attached, memory isn't written automatically!
+        /// You need to write in your callback.
+        ///
+        /// # Examples
+        /// ```rust
+        /// # use lasagna::emulator::Emulator;
+        /// fn callback(mem_slice: &mut [u8], pointer: u32, value: &[u8]) -> Option<u32> {
+        ///     println!("Writing {:02X?} at {}", value, pointer);
+        ///     for i in 0..mem_slice.len() {
+        ///        mem_slice[i] = value[i];
+        ///     }
+        ///     None
+        /// }
+        ///
+        /// let mut emu = Emulator::<0x100000>::default()
+        ///     .with_callback(callback);
+        /// ```
+        pub fn with_callback(mut self, function: fn(&mut [u8], u32, &[u8]) -> Option<u32>) -> Self {
+            self.callback = Some(function);
             self
         }
 
@@ -294,12 +337,41 @@ mod structures {
                 (0b00, 0b011, _) => return Some(
                     u32::from_be_bytes(self.val1)
                 ),
+                (0b00, 0b100, 0b000) => {
+                    if self.cur.checked_add(5).is_none() {
+                        return Some(1);
+                    }
+                    self.cur += 1;
+                    let length: &[u8; 4] = (
+                        &self.memory[self.cur as usize ..= self.cur as usize + 3]
+                    ).try_into().unwrap();
+                    self.cur += 4;
+                    let length = u32::from_be_bytes(*length);
+                    if self.cur.checked_add(length).is_none() {
+                        return Some(1);
+                    }
+                    if let Some(callback) = self.callback {
+                        let literal =
+                            self.memory[self.cur as usize .. (self.cur + length) as usize]
+                                .to_owned();
+                        callback(
+                            &mut self.memory[self.ptr as usize .. (self.ptr + length) as usize],
+                            length,
+                            &literal
+                        )?;
+                    } else {
+                        for i in 0..length {
+                            self.memory[(self.ptr + i) as usize] = self.memory[(self.cur + i) as usize];
+                        }
+                    }
+                    self.cur += length;
+                },
                 (0b00, 0b100, _) => self.val2 = self.val1,
                 (0b00, 0b101, _) => core::mem::swap(&mut self.val1, &mut self.val2),
                 (0b00, 0b110, ty) => {
                     let size = Self::get_size(ty) - 1;
                     if self.check_size(size) {return Some(1)};
-                    let mem = &mut self.memory[
+                    let mem = &self.memory[
                         self.ptr as usize ..= self.ptr as usize + size
                         ];
                     // Probably a way better way to do this but :P
@@ -313,9 +385,13 @@ mod structures {
                     let mem = &mut self.memory[
                         self.ptr as usize ..= self.ptr as usize + size
                         ];
-                    // Probably a way better way to do this but :P
-                    for i in 0 ..= size {
-                        mem[i] = self.val1[i];
+                    if let Some(callback) = self.callback {
+                        callback(mem, self.ptr, &self.val1)?;
+                    } else {
+                        // Probably a way better way to do this but :P
+                        for i in 0 ..= size {
+                            mem[i] = self.val1[i];
+                        }
                     }
                 },
                 (0b01, 0b000, _) => {
@@ -338,19 +414,24 @@ mod structures {
                         );
                     }
                 },
-                (0b01, 0b010, _) => {
+                (0b01, 0b010, ty) => {
                     if self.check_size(3) { return Some(1); }
-                    if !self.push(self.cur.to_be_bytes()) { return Some(2) };
-                    self.cur = u32::from_be_bytes(
-                        self.memory[self.ptr as usize ..= (self.ptr + 3) as usize]
-                            .try_into().unwrap()
-                    );
+                    let jump = match self.get_value(ty) {
+                        Some(v) => v,
+                        None => return Some(1)
+                    };
+                    if jump.iter().any(|v| *v != 0) {
+                        self.cur = u32::from_be_bytes(
+                            self.memory[self.ptr as usize ..= (self.ptr + 3) as usize]
+                                .try_into().unwrap()
+                        );
+                    }
                 },
                 (0b01, 0b011, _) => {
-                    self.cur = match self.pop() {
-                        Some(v) => u32::from_be_bytes(v),
-                        None => return Some(3)
-                    }
+                    self.cur = match self.ptr.checked_add(1) {
+                        Some(v) => v,
+                        None => return Some(1)
+                    };
                 },
                 (0b01, 0b100, ty) => {
                     let size = Self::get_size(ty);
@@ -485,7 +566,7 @@ mod structures {
                     self.val1[3] = self.val1[3] ^ self.val2[3];
                 },
                 (0b11, 0b111, 0b111) => if let Some(debugger) = self.debugger {
-                    debugger(&mut self);
+                    debugger(self)?;
                 },
                 (0b11, from, to) => {
                     let old = Value::from_bytes(&self.val1, from);
@@ -501,12 +582,55 @@ mod structures {
                         (Value::I32(_),     0b101) => unreachable!(),
                         (Value::Float(_),   0b110) => unreachable!(),
                         (Value::Bool(_),    0b111) => unreachable!(),
-                        // The rest
+                        // U8 ->
+                        (Value::U8(_), 0b001) => {},
+                        (Value::U8(n), 0b010 | 0b011) => {as_convert!(n, self; u16 = 2);}
+                        (Value::U8(n), 0b100 | 0b101) => {as_convert!(n, self; u32 = 4);}
+                        (Value::U8(n), 0b110) => {as_convert!(n, self; f32 = 4);}
+                        (Value::U8(n), 0b111) => {self.val1[0] = (n > 0) as u8},
+                        // I8 ->
+                        (Value::I8(_), 0b000) => {},
+                        (Value::I8(n), 0b010 | 0b011) => {as_convert!(n, self; i16 = 2);}
+                        (Value::I8(n), 0b100 | 0b101) => {as_convert!(n, self; i32 = 4);}
+                        (Value::I8(n), 0b110) => {as_convert!(n, self; f32 = 4);}
+                        (Value::I8(n), 0b111) => {self.val1[0] = (n < 0) as u8},
+                        // U16 ->
+                        (Value::U16(n), 0b000 | 0b001) => {as_convert!(n, self; u8 = 1);},
+                        (Value::U16(_), 0b011) => {}
+                        (Value::U16(n), 0b100 | 0b101) => {as_convert!(n, self; u32 = 4);}
+                        (Value::U16(n), 0b110) => {as_convert!(n, self; f32 = 4);}
+                        (Value::U16(n), 0b111) => {self.val1[0] = (n > 0) as u8},
+                        // I16 ->
+                        (Value::I16(n), 0b000 | 0b001) => {as_convert!(n, self; i8 = 1);},
+                        (Value::I16(_), 0b010) => {}
+                        (Value::I16(n), 0b100 | 0b101) => {as_convert!(n, self; i32 = 4);}
+                        (Value::I16(n), 0b110) => {as_convert!(n, self; f32 = 4);}
+                        (Value::I16(n), 0b111) => {self.val1[0] = (n < 0) as u8},
+                        // U32 ->
+                        (Value::U32(n), 0b000 | 0b001) => {as_convert!(n, self; u8 = 1);},
+                        (Value::U32(n), 0b010 | 0b011) => {as_convert!(n, self; u16 = 2);}
+                        (Value::U32(_), 0b101) => {}
+                        (Value::U32(n), 0b110) => {as_convert!(n, self; f32 = 4);}
+                        (Value::U32(n), 0b111) => {self.val1[0] = (n > 0) as u8},
+                        // I32 ->
+                        (Value::I32(n), 0b000 | 0b001) => {as_convert!(n, self; i8 = 1);},
+                        (Value::I32(n), 0b010 | 0b011) => {as_convert!(n, self; i16 = 2);}
+                        (Value::I32(_), 0b100) => {}
+                        (Value::I32(n), 0b110) => {as_convert!(n, self; f32 = 4);}
+                        (Value::I32(n), 0b111) => {self.val1[0] = (n < 0) as u8},
+                        // Float ->
+                        (Value::Float(n), 0b000) => {as_convert!(n, self; u8 = 1);},
+                        (Value::Float(n), 0b001) => {as_convert!(n, self; i8 = 1);},
+                        (Value::Float(n), 0b010) => {as_convert!(n, self; u16 = 2);}
+                        (Value::Float(n), 0b011) => {as_convert!(n, self; i16 = 2);}
+                        (Value::Float(n), 0b100) => {as_convert!(n, self; u32 = 4);}
+                        (Value::Float(n), 0b101) => {as_convert!(n, self; i32 = 4);}
+                        (Value::Float(n), 0b111) => {self.val1[0] = (n > 0.0) as u8},
+                        // Bool ->
                         (Value::Bool(_), 0b000 | 0b001) => {},
-                        (Value::Bool(n), 0b010 | 0b011) => {self.val1[0] = 0; self.val1[1] = n},
-                        (Value::Bool(n), 0b100 | 0b101) => {self.val1 = [0; 4]; self.val1[3] = n},
-                        (Value::Bool(n), 0b110) => {self.val1 = if n != 0 {FLOAT_ONE} else {[0; 4]}},
-
+                        (Value::Bool(n), 0b010 | 0b011) => {as_convert!(n, self; u16 = 2);},
+                        (Value::Bool(n), 0b100 | 0b101) => {as_convert!(n, self; u32 = 4);},
+                        (Value::Bool(n), 0b110) => {self.val1 = if n == 0 {[0; 4]} else {FLOAT_ONE}}
                     }
                 }
             }
