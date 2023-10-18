@@ -375,9 +375,7 @@ mod structures {
                         self.ptr as usize ..= self.ptr as usize + size
                         ];
                     // Probably a way better way to do this but :P
-                    for i in 0 ..= size {
-                        self.val1[i] = mem[i];
-                    }
+                    self.val1[..(size + 1)].copy_from_slice(&mem[..(size + 1)]);
                 },
                 (0b00, 0b111, ty) => {
                     let size = Self::get_size(ty) - 1;
@@ -388,10 +386,7 @@ mod structures {
                     if let Some(callback) = self.callback {
                         callback(mem, self.ptr, &self.val1)?;
                     } else {
-                        // Probably a way better way to do this but :P
-                        for i in 0 ..= size {
-                            mem[i] = self.val1[i];
-                        }
+                        mem[..(size + 1)].copy_from_slice(&self.val1[..(size + 1)]);
                     }
                 },
                 (0b01, 0b000, _) => {
@@ -475,13 +470,9 @@ mod structures {
                         _ => unreachable!()
                     };
                     let (val, size) = val.into_bytes();
-                    for i in 0..size {
-                        self.val1[i] = val[i];
-                    }
+                    self.val1[..size].copy_from_slice(&val[..size]);
                     let (over, size) = over.into_bytes();
-                    for i in 0..size {
-                        self.val2[i] = over[i];
-                    }
+                    self.val2[..size].copy_from_slice(&over[..size]);
                 },
                 (0b10, 0b011, ty) => {
                     let lhs = Value::from_bytes(&self.val1, ty);
@@ -499,13 +490,9 @@ mod structures {
                         _ => unreachable!()
                     };
                     let (val, size) = val.into_bytes();
-                    for i in 0..size {
-                        self.val1[i] = val[i];
-                    }
+                    self.val1[..size].copy_from_slice(&val[..size]);
                     let (over, size) = over.into_bytes();
-                    for i in 0..size {
-                        self.val2[i] = over[i];
-                    }
+                    self.val2[..size].copy_from_slice(&over[..size]);
                 },
                 (0b10, 0b100, ty) => {
                     let lhs = Value::from_bytes(&self.val1, ty);
@@ -553,17 +540,17 @@ mod structures {
                     let val = u32::from_be_bytes(self.val1).rotate_right(amount as u32);
                     self.val1 = val.to_be_bytes();
                 },
-                (0b11, 0b100, 0b100) => self.val1[0] = self.val1[0] ^ self.val2[0],
+                (0b11, 0b100, 0b100) => self.val1[0] ^= self.val2[0],
                 (0b11, 0b101, 0b101) => {
-                    self.val1[0] = self.val1[0] ^ self.val2[0];
-                    self.val1[1] = self.val1[1] ^ self.val2[1];
+                    self.val1[0] ^= self.val2[0];
+                    self.val1[1] ^= self.val2[1];
                 },
                 (0b11, 0b110, 0b110) => {
                     // eh screw it
-                    self.val1[0] = self.val1[0] ^ self.val2[0];
-                    self.val1[1] = self.val1[1] ^ self.val2[1];
-                    self.val1[2] = self.val1[2] ^ self.val2[2];
-                    self.val1[3] = self.val1[3] ^ self.val2[3];
+                    self.val1[0] ^= self.val2[0];
+                    self.val1[1] ^= self.val2[1];
+                    self.val1[2] ^= self.val2[2];
+                    self.val1[3] ^= self.val2[3];
                 },
                 (0b11, 0b111, 0b111) => if let Some(debugger) = self.debugger {
                     debugger(self)?;

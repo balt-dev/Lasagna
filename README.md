@@ -1,6 +1,6 @@
 ### Licensing
 
-This README is in the public domain (as per Esolang's requirements), while the implementation in this repository is under the MIT license.
+This README is in the public domain (as per esolang.org's requirements), while the implementation in this repository is under the MIT license.
 
 ---
 
@@ -8,13 +8,12 @@ This README is in the public domain (as per Esolang's requirements), while the i
 
 Lasagna is an esoteric 32-bit assembly instruction set.
 
-There are five 4-byte registers, being `VAL1`, `VAL2`, `CUR`, `PTR`, and `STAT`.
+There are four 4-byte registers, being `VAL1`, `VAL2`, `CUR`, and `PTR`.
 
 `VAL1` and `VAL2` hold 4-byte values, `PTR` holds a pointer to a read/write index in memory,
-`CUR` holds a pointer to the next instruction in memory,
-and `STAT` holds an interrupt code, raising an interrupt when written to.
+and `CUR` holds a pointer to the next instruction in memory.
 
-`VAL1` and `VAL2` start out with indeterminate values, `PTR` starts at `00000000`, `CUR` starts at `00020000`, and `STAT` starts as `00000000`.
+`VAL1` and `VAL2` start out with indeterminate values, `PTR` starts at `00000000`, and `CUR` starts at `00020000`.
 
 Memory indexes `00010000` - `0001FFFF` are reserved for the stack.
 Writing to these values may or may not be allowed depending on the implementation, don't depend on it.
@@ -42,16 +41,16 @@ An executable is defined by a list of instructions (each being one byte), and co
 
 Each instruction is formatted as a kind, an index, and, 3 bits of a type (if applicable, else it can be anything).
 
-|          Type           |  Name   | Bits  | Size|
-|:-----------------------:|:-------:|:-----:|:---:|
-| Unsigned 8-bit integer  |  `u8`   | `000` | `1` |
-|  Signed 8-bit integer   |  `i8`   | `001` | `1` |
-| Unsigned 16-bit integer |  `u16`  | `010` | `2` |
-|  Signed 16-bit integer  |  `i16`  | `011` | `2` |
-| Unsigned 32-bit integer |  `u32`  | `100` | `4` |
-|  Signed 32-bit integer  |  `i32`  | `101` | `4` |
-|          Float          | `float` | `110` | `4` |
-|         Boolean         | `bool`  | `111` | `1` |
+|          Type           |  Name   | Bits  | Size |
+|:-----------------------:|:-------:|:-----:|:----:|
+| Unsigned 8-bit integer  |  `u8`   | `000` | `1`  |
+|  Signed 8-bit integer   |  `i8`   | `001` | `1`  |
+| Unsigned 16-bit integer |  `u16`  | `010` | `2`  |
+|  Signed 16-bit integer  |  `i16`  | `011` | `2`  |
+| Unsigned 32-bit integer |  `u32`  | `100` | `4`  |
+|  Signed 32-bit integer  |  `i32`  | `101` | `4`  |
+|          Float          | `float` | `110` | `4`  |
+|         Boolean         | `bool`  | `111` | `1`  |
 
 In the following table, N represents the size of the specified type.
 
@@ -60,18 +59,18 @@ In the following table, N represents the size of the specified type.
 | `00` `000` `ANY` |          `noop`          | Does nothing.                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `00` `001` `ANY` |          `push`          | Pushes `VAL1` to the stack.                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `00` `010` `ANY` |          `pop`           | Pops `VAL1` from the stack.                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `00` `011` `ANY` |       `interrupt`        | Copies the contents of `VAL1` into `STAT`, raising an interrupt.                                                                                                                                                                                                                                                                                                                                                                      |
-| `00` `100` `000` |        `literal`         | Puts a length as a u32, and then bytes of arbitrary data at this instruction, writes it at `PTR`, and skips past it.<br/>Data is formatted as seen in the following section.<br/>This should respect memory mapping.              |
+| `00` `011` `ANY` |       `interrupt`        | Raises an interrupt with the code of `VAL1`.                                                                                                                                                                                                                                                                                                                                                                                          |
+| `00` `100` `000` |        `literal`         | Puts a length as a u32, and then bytes of arbitrary data at this instruction, writes it at `PTR`, and skips past it.<br/>Data is formatted as seen in the following section.<br/>This should respect memory mapping.                                                                                                                                                                                                                  |
 | `00` `100` `ELS` |          `copy`          | Copies the contents of `VAL1` into `VAL2`.                                                                                                                                                                                                                                                                                                                                                                                            |
 | `00` `101` `ANY` |          `swap`          | Swaps the contents of `VAL1` and `VAL2`.                                                                                                                                                                                                                                                                                                                                                                                              |
 | `00` `110` `TYP` |      `read [type]`       | Reads N bytes of memory at `PTR` to `VAL1`.                                                                                                                                                                                                                                                                                                                                                                                           |
-| `00` `111` `TYP` |      `write [type]`      | Writes N bytes of `VAL1` into memory at `PTR`.                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `00` `111` `TYP` |      `write [type]`      | Writes N bytes of `VAL1` into memory at `PTR`.                                                                                                                                                                                                                                                                                                                                                                                        |
 |       N/A        |       `label [ID]`       | Not represented in the file. Marks a cursor index to jump to.                                                                                                                                                                                                                                                                                                                                                                         |
 | `01` `000` `ANY` |       `jump [ID]`        | Jumps to the specified cursor index.                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `01` `001` `ANY` |   `branch [type] [ID]`   | Jumps if the value in `VAL1` is zero.                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `01` `010` `ANY` | `branchzero [type] [ID]` | Jumps if the value in `VAL1` isn't zero.                                                                                                                                                                                                                                                                                                                                                                                              |
-| `01` `011` `ANY` |          `goto`          | Copies `CUR` into `PTR`, moving the pointer to this instruction, and then increments `PTR` by 1 to move past it.                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `01` `100` `TYP` |       `left [type]`      | Decreases `PTR` by N.                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `01` `011` `ANY` |          `goto`          | Copies `CUR` into `PTR`, moving the pointer to this instruction, and then increments `PTR` by 1 to move past it.                                                                                                                                                                                                                                                                                                                      |
+| `01` `100` `TYP` |      `left [type]`       | Decreases `PTR` by N.                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `01` `101` `TYP` |      `right [type]`      | Increases `PTR` by N.                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `01` `110` `ANY` |          `move`          | Copies the contents of `VAL1` into `PTR`.                                                                                                                                                                                                                                                                                                                                                                                             |
 | `01` `111` `ANY` |        `pointer`         | Copies `PTR` into the contents of `VAL1`.                                                                                                                                                                                                                                                                                                                                                                                             |
